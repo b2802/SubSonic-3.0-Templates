@@ -27,13 +27,13 @@ const string FKSql=@"SELECT
     INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE CU ON C.CONSTRAINT_NAME = CU.CONSTRAINT_NAME
     INNER JOIN
         (	
-            SELECT i1.TABLE_NAME, i2.COLUMN_NAME
+            SELECT i1.TABLE_NAME, i2.COLUMN_NAME,i2.ORDINAL_POSITION
             FROM  INFORMATION_SCHEMA.TABLE_CONSTRAINTS i1
             INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE i2 ON i1.CONSTRAINT_NAME = i2.CONSTRAINT_NAME
             WHERE i1.CONSTRAINT_TYPE = 'PRIMARY KEY'
         ) 
-    PT ON PT.TABLE_NAME = PK.TABLE_NAME
-    WHERE FK.Table_NAME=@tableName OR PK.Table_NAME=@tableName";
+    PT ON PT.TABLE_NAME = PK.TABLE_NAME AND CU.ORDINAL_POSITION=PT.ORDINAL_POSITION
+    WHERE FK.Table_NAME=@tableName OR PK.Table_NAME=@tableName order by C.CONSTRAINT_NAME";
 
 
 const string TABLE_SQL=@"SELECT *
@@ -126,6 +126,7 @@ List<Table> LoadTables(){
             tbl.Schema=rdr["TABLE_SCHEMA"].ToString();
             tbl.Columns=LoadColumns(tbl);
             tbl.PrimaryKey=GetPK(tbl.Name);
+			tbl.PrimaryKeys=GetPKs(tbl.Name);
             tbl.CleanName=CleanUp(tbl.Name);
             tbl.ClassName=Inflector.MakeSingular(tbl.CleanName);
             tbl.QueryableName=Inflector.MakePlural(tbl.ClassName);
@@ -195,12 +196,14 @@ List<FKTable> LoadFKTables(string tableName){
                 fk.ThisColumn=rdr["ThisColumn"].ToString();
                 fk.OtherTable=rdr["OtherTable"].ToString();
                 fk.OtherColumn=rdr["OtherColumn"].ToString();
+                fk.ConstraintName = rdr["Constraint_Name"].ToString();
             
             }else{
                 fk.ThisTable=rdr["OtherTable"].ToString();
                 fk.ThisColumn=rdr["OtherColumn"].ToString();
                 fk.OtherTable=rdr["ThisTable"].ToString();
                 fk.OtherColumn=rdr["ThisColumn"].ToString();
+                fk.ConstraintName = rdr["Constraint_Name"].ToString();
           
             }
             
@@ -213,7 +216,6 @@ List<FKTable> LoadFKTables(string tableName){
     return result;
 
 }
-
 string GetPK(string table){
 	
 	string pk="";
@@ -223,7 +225,8 @@ string GetPK(string table){
         JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC
         ON KCU.CONSTRAINT_NAME=TC.CONSTRAINT_NAME
         WHERE TC.CONSTRAINT_TYPE='PRIMARY KEY'
-		AND KCU.TABLE_NAME=@tableName";
+		AND KCU.TABLE_NAME=@tableName
+		order by ORDINAL_POSITION";
         
     var cmd=GetCommand(sql);
     cmd.Parameters.AddWithValue("@tableName",table);
@@ -233,6 +236,26 @@ string GetPK(string table){
         pk=result.ToString();    
          
 	return pk;
+}
+List<string> GetPKs(string table)
+{
+	var result=new List<string>();
+	DataTable pkTable=new DataTable();
+    string sql=@"SELECT KCU.COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU
+        JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC
+        ON KCU.CONSTRAINT_NAME=TC.CONSTRAINT_NAME
+        WHERE TC.CONSTRAINT_TYPE='PRIMARY KEY'
+		AND KCU.TABLE_NAME=@tableName
+		order by ORDINAL_POSITION";
+    var cmd=GetCommand(sql);
+    cmd.Parameters.AddWithValue("@tableName",table);
+    using(IDataReader rdr=cmd.ExecuteReader(CommandBehavior.CloseConnection)){
+        while(rdr.Read()){
+            result.Add(rdr["COLUMN_NAME"].ToString());
+        }
+	}
+	return result;
 }
 
 string GetSysType(string sqlType){

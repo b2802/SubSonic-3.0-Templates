@@ -1,4 +1,4 @@
-﻿<#@ template language="C#v3.5" debug="False" hostspecific="True"  #>
+<#@ template language="C#v3.5" debug="False" hostspecific="True"  #>
 <#@ output extension=".cs" #>
 <#@ include file="SQLServer.ttinclude" #>
 <#
@@ -58,41 +58,62 @@ namespace <#=Namespace#>
 
         #endregion
 
-        #region Foreign Keys
-<#
-        List<string> fkCreated = new List<string>();
-        foreach(FKTable fk in tbl.FKTables)
-        { 
-            
-            if(!ExcludeTables.Contains(fk.OtherTable)){
-                string propName=fk.OtherQueryable;
-                if(fkCreated.Contains(propName))
-                {
-                    propName=fk.OtherQueryable+fkCreated.Count.ToString();
-                }
-                
-                fkCreated.Add(fk.OtherQueryable);
-                    
+
+		#region ' Foreign Keys '
+<# 
+		Dictionary<string,List<FKTable>> contraints = new Dictionary<string,List<FKTable>>();
+            foreach(FKTable fk in tbl.FKTables)
+			{
+				if (contraints.ContainsKey(fk.ConstraintName)==false)
+				{
+					List<FKTable> table_list=new List<FKTable>();
+					table_list.Add(fk);
+					contraints.Add(fk.ConstraintName,table_list);
+				}
+				else
+				{
+					List<FKTable> table_list=contraints[fk.ConstraintName];
+					table_list.Add(fk);					
+				}					
+			}
+				List<string> fkCreated2 = new List<string>();
+			foreach (string contraint in contraints.Keys)
+			{
+				List<FKTable> table_list=contraints[contraint];
+               string propName=table_list[0].OtherQueryable;
+               if(fkCreated2.Contains(propName))
+               {
+                   propName=table_list[0].OtherQueryable+fkCreated2.Count.ToString();
+               }
                
-#>
-        public IQueryable<<#=fk.OtherClass #>> <#=propName #>
-        {
-            get
-            {
-                  var db=new <#=Namespace #>.<#=DatabaseName#>DB();
-                  return from items in db.<#=fk.OtherQueryable #>
-                       where items.<#=fk.OtherColumn#> == _<#=fk.ThisColumn#>
-                       select items;
-            }
-        }
+               fkCreated2.Add(table_list[0].OtherQueryable);
 
-<#
-            }
-        }
-            
-#>
-        #endregion
+				#>
+		public IQueryable<<#=table_list[0].OtherClass #>> <#=propName #>
+		{
+			get
+			{
+				
+                var db=new <#=Namespace #>.<#=DatabaseName#>DB();
+                return from items in db.<#=table_list[0].OtherQueryable#>
+					 where<# 
+				for (int i=0;i<table_list.Count;i++)
+				{
+					FKTable tab=table_list[i];					
+					if (i==0){#> items.<#=CleanUp(tab.OtherColumn)#> == <#=CleanUp(tab.ThisColumn) #>
+							<# } else {#> && items.<#=CleanUp(tab.OtherColumn)#> == <#=CleanUp(tab.ThisColumn) #>
+							<# }#>
+<#}#>
+select items;
+			}
+		}
+		
+<# 
+		}
 
+		
+#>
+#endregion   
 
         private static PropertyChangingEventArgs emptyChangingEventArgs = new PropertyChangingEventArgs(String.Empty);
         public event PropertyChangingEventHandler PropertyChanging;

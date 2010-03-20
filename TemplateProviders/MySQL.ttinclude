@@ -1,4 +1,4 @@
-﻿<#@ include file="Settings.ttinclude" #>
+<#@ include file="Settings.ttinclude" #>
 <#@ assembly name="MySql.Data" #>
 <#@ import namespace="MySql.Data.MySqlClient" #>
 <#+
@@ -6,7 +6,7 @@ MySqlConnection conn;
 
 
 List<FKTable> LoadFKTables(string tableName){
-    string fkSQL=@"SELECT*
+    string fkSQL=@"SELECT *
         FROM information_schema.KEY_COLUMN_USAGE
         WHERE
         (REFERENCED_TABLE_SCHEMA = (@schema)
@@ -18,7 +18,7 @@ List<FKTable> LoadFKTables(string tableName){
         AND TABLE_NAME =@table
         AND REFERENCED_TABLE_NAME is not null
         )
-        ORDER BY TABLE_NAME, COLUMN_NAME;";
+        ORDER BY CONSTRAINT_NAME,TABLE_NAME, COLUMN_NAME;";
     
     var result=new List<FKTable>();
     
@@ -39,12 +39,14 @@ List<FKTable> LoadFKTables(string tableName){
                 fk.ThisColumn=rdr["COLUMN_NAME"].ToString();
                 fk.OtherTable=rdr["REFERENCED_TABLE_NAME"].ToString();
                 fk.OtherColumn=rdr["REFERENCED_COLUMN_NAME"].ToString();
+				fk.ConstraintName = rdr["CONSTRAINT_NAME"].ToString();
             
             }else{
                 fk.ThisTable=rdr["REFERENCED_TABLE_NAME"].ToString();
                 fk.ThisColumn=rdr["REFERENCED_COLUMN_NAME"].ToString();
                 fk.OtherTable=rdr["TABLE_NAME"].ToString();
                 fk.OtherColumn=rdr["COLUMN_NAME"].ToString();
+				fk.ConstraintName = rdr["CONSTRAINT_NAME"].ToString();
           
             }
             
@@ -84,6 +86,7 @@ List<Table> LoadTables(){
                 //add it
                 Table tbl = new Table();
                 tbl.PrimaryKey="";
+				tbl.PrimaryKeys = new List<string>();
                 tbl.Name = row["TABLE_NAME"].ToString();
                 tbl.FKTables=LoadFKTables(tbl.Name);
                 tbl.CleanName=CleanUp(tbl.Name);
@@ -127,6 +130,7 @@ List<Table> LoadTables(){
                 
                 if(col.IsPK){
                     item.PrimaryKey=col.Name ?? "";
+					item.PrimaryKeys.Add(col.Name);
                 }
                 
                 int.TryParse(row["CHARACTER_MAXIMUM_LENGTH"].ToString(),out col.MaxLength);
@@ -141,7 +145,94 @@ List<Table> LoadTables(){
 
     return result;
 }
+List<SP> GetSPs(){
+    var result=new List<SP>();
+    //pull the SPs
+    
+    DataTable sprocs=null;
+    DataTable parameters=null;
+    string SchemaName;
+    using(MySqlConnection conn=new MySqlConnection(ConnectionString)){
+        conn.Open();
+		sprocs=conn.GetSchema("Procedures");
+		SchemaName=conn.Database.ToLower();
+		conn.Close();
+	}
+	
+	foreach(DataRow row in sprocs.Rows){
+		if (row["ROUTINE_SCHEMA"].ToString().ToLower()!=SchemaName)
+			continue;
+	    string spType=row["ROUTINE_TYPE"].ToString();
+        var sp=new SP();
+	    sp.Name=row["ROUTINE_NAME"].ToString();
+	    
+        if(spType=="PROCEDURE" &! sp.Name.StartsWith("sp_")){
+            
+    	    sp.CleanName=CleanUp(sp.Name);
+            
+            sp.Parameters=GetSPParams(sp.Name);
+            result.Add(sp);        
+        }
+    }
+    return result;
+    
+}
+List<SPParam> GetSPParams(string spName){
+    var result=new List<SPParam>();
+	
+	string dbName = null;
+    
+    if(!String.IsNullOrEmpty(DatabaseName))
+		dbName = DatabaseName;
+    
+    string[] restrictions = new string[4] { dbName , null, spName, null };
+		
+    using(MySqlConnection conn=new MySqlConnection(ConnectionString)){
+        conn.Open();
+		MySqlCommand cmd = new MySqlCommand();
+		cmd.Connection = conn;
+		cmd.CommandText = spName;
+		cmd.CommandType = CommandType.StoredProcedure;
+		//var sprocs=conn.GetSchema("ProcedureParameters", restrictions);
+		MySqlCommandBuilder.DeriveParameters(cmd);
+		if(cmd.Parameters.Count > 0)
+            {
+                foreach(MySqlParameter param in cmd.Parameters)
+                {
+					SPParam p=new SPParam();
+                    //DataRow row = parametersDataTable.NewRow();
+                    p.Name = param.ParameterName.Replace("@","");
+					p.CleanName = CleanUp(p.Name).Replace("@","");
+					p.DbType=GetDbTypeFromMySqlDbType(param.MySqlDbType);
+					p.SysType=GetSysTypeFromMySqlDbType(param.MySqlDbType);
+					/*
+					if (param.MySqlDbType.ToString().Contains("unsigned"))
+					{
+						p.DbType=GetDbType(param.MySqlDbType+" unsigned").ToString();    
+						p.SysType=GetSysType(param.MySqlDbType.ToString()+" unsigned");
+					}
+					else{
+						p.DbType=GetDbType(param.MySqlDbType.ToString()).ToString();
+						p.SysType=GetSysType(param.MySqlDbType.ToString());
+					}
+	
+					if (TreatTinyint1AsBool && param.MySqlDbType.ToString() == "tinyint(1)") {
+						p.SysType = "bool";
+						p.DbType = DbType.Boolean.ToString();
+					}*/					
+                   // row[2] = param.Direction.ToString();
 
+                   result.Add(p);
+                }
+                //parametersDataTable.AcceptChanges();
+            }		
+		//conn.Close();
+	   
+		
+		
+	}
+	return result;
+}
 string GetSysType(string sqlType){
 	string sysType="string";
 	switch (sqlType) {
@@ -278,4 +369,165 @@ DbType GetDbType(string sqlType){
     }
 
 }
+        string GetSysTypeFromMySqlDbType(MySqlDbType type)
+        {
+            string sysType = "string";
+            switch (type)
+            {
+                case MySqlDbType.DateTime:
+                case MySqlDbType.Time:
+                case MySqlDbType.Timestamp:
+                case MySqlDbType.Date:
+                case MySqlDbType.Newdate:
+                    sysType = "DateTime";
+                    break;
+
+                case MySqlDbType.TinyBlob:
+                case MySqlDbType.Blob:
+                case MySqlDbType.MediumBlob:
+                case MySqlDbType.LongBlob:
+                case MySqlDbType.Binary:
+                case MySqlDbType.VarBinary:
+                    sysType = "byte[]";
+                    break;
+                case MySqlDbType.LongText:
+                case MySqlDbType.MediumText:
+                case MySqlDbType.Text:
+                case MySqlDbType.String:
+                case MySqlDbType.TinyText:
+                case MySqlDbType.VarChar:
+                case MySqlDbType.VarString:
+                    sysType = "string";
+                    break;
+                case MySqlDbType.Bit:
+            			sysType=  "bool";
+                    break;
+                case MySqlDbType.Byte:
+                    sysType = "byte";
+                    break;
+                case MySqlDbType.Decimal:
+                case MySqlDbType.Double:
+                case MySqlDbType.NewDecimal:
+			        sysType=  "decimal";
+                    break;
+                case MySqlDbType.Enum:
+                    break;
+                case MySqlDbType.Float:
+			        sysType="double";
+                    break;
+                case MySqlDbType.Geometry:
+                    break;
+
+                case MySqlDbType.Int16:
+                    sysType = "short";
+                    break;
+                case MySqlDbType.Int24:
+                case MySqlDbType.Int32:
+                    sysType = "int";
+                    break;
+                case MySqlDbType.Int64:
+                    sysType = "long";                    
+                    break;
+                case MySqlDbType.Set:
+                    break;
+                case MySqlDbType.UByte:
+                    sysType = "byte";
+                    break;
+                case MySqlDbType.UInt16:
+                    sysType = "ushort";
+                    break;
+                case MySqlDbType.UInt24:
+                case MySqlDbType.UInt32:
+                    sysType = "uint";
+                    break;
+                case MySqlDbType.UInt64:
+                    sysType = "ulong";
+                    break;
+                case MySqlDbType.Year:
+                    break;
+            }
+            return sysType;
+        }
+        string GetDbTypeFromMySqlDbType(MySqlDbType type)
+        {
+            string sysType = "AnsiString";
+            switch (type)
+            {
+                case MySqlDbType.DateTime:
+                case MySqlDbType.Time:
+                case MySqlDbType.Timestamp:
+                case MySqlDbType.Date:
+                case MySqlDbType.Newdate:
+                    sysType = "DateTime";
+                    break;
+
+                case MySqlDbType.TinyBlob:
+                case MySqlDbType.Blob:
+                case MySqlDbType.MediumBlob:
+                case MySqlDbType.LongBlob:
+                case MySqlDbType.Binary:
+                case MySqlDbType.VarBinary:
+                    sysType = "Object";
+                    break;
+                case MySqlDbType.LongText:
+                case MySqlDbType.MediumText:
+                case MySqlDbType.Text:
+                case MySqlDbType.String:
+                case MySqlDbType.TinyText:
+                case MySqlDbType.VarChar:
+                case MySqlDbType.VarString:
+                    sysType = "AnsiString";
+                    break;
+                case MySqlDbType.Bit:
+            			sysType=  "Boolean";
+                    break;
+                case MySqlDbType.Byte:
+                    sysType = "SByte";
+                    break;
+                case MySqlDbType.Decimal:
+                case MySqlDbType.Double:
+                case MySqlDbType.NewDecimal:
+			        sysType=  "Decimal";
+                    break;
+                case MySqlDbType.Enum:
+                    break;
+                case MySqlDbType.Float:
+			        sysType="Double";
+                    break;
+                case MySqlDbType.Geometry:
+                    break;
+                case MySqlDbType.Guid:
+                    sysType = "Guid";					
+                    break;
+                case MySqlDbType.Int16:
+                    sysType = "Int16";
+                    break;
+                case MySqlDbType.Int24:
+                case MySqlDbType.Int32:
+                    sysType = "Int32";
+                    break;
+                case MySqlDbType.Int64:
+                    sysType = "Int64";                    
+                    break;
+                case MySqlDbType.Set:
+                    break;
+                case MySqlDbType.UByte:
+                    sysType = "Byte";
+                    break;
+                case MySqlDbType.UInt16:
+                    sysType = "UInt16";
+                    break;
+                case MySqlDbType.UInt24:
+                case MySqlDbType.UInt32:
+                    sysType = "UInt32";
+                    break;
+                case MySqlDbType.UInt64:
+                    sysType = "UInt64";
+                    break;
+                case MySqlDbType.Year:
+                    break;
+            }
+            return sysType;
+        }
+
 #>

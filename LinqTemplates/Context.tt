@@ -24,6 +24,8 @@ namespace <#=Namespace#>
         public IDataProvider DataProvider;
         public DbQueryProvider provider;
         
+        public static IDataProvider DefaultDataProvider { get; set; }
+
         public bool TestMode
 		{
             get
@@ -33,8 +35,13 @@ namespace <#=Namespace#>
         }
 
         public <#=DatabaseName#>DB() 
-        { 
-            DataProvider = ProviderFactory.GetProvider("<#=ConnectionStringName#>");
+        {
+            if (DefaultDataProvider == null) {
+                DataProvider = ProviderFactory.GetProvider("<#=ConnectionStringName#>");
+            }
+            else {
+                DataProvider = DefaultDataProvider;
+            }
             Init();
         }
 
@@ -236,7 +243,8 @@ namespace <#=Namespace#>
             provider = new DbQueryProvider(this.Provider);
 
 <#
-    //################################################ QUERIES ####################################### #>
+    //################################################ QUERIES ####################################### 
+			#>
             #region ' Query Defs '
 <#
     foreach(Table tbl in tables)
@@ -253,7 +261,8 @@ namespace <#=Namespace#>
 #>
             #endregion
 
-<#//################################################ SCHEMAS ####################################### #>
+<#//################################################ SCHEMAS ####################################### 
+	#>
 
             #region ' Schemas '
         	if(DataProvider.Schema.Tables.Count == 0)
@@ -272,5 +281,18 @@ namespace <#=Namespace#>
             }
             #endregion
         }
+        
+<#//################################################ HELPERS ####################################### 
+	#>
+
+        #region ' Helpers '
+            
+        internal static DateTime DateTimeNowTruncatedDownToSecond() {
+            var now = DateTime.Now;
+            return now.AddTicks(-now.Ticks % TimeSpan.TicksPerSecond);
+        }
+
+        #endregion
+
     }
 }

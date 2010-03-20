@@ -254,14 +254,40 @@ namespace <#=Namespace #>
         {
             return this.<#=tbl.PK.CleanName#>;
         }
-        
         public void SetKeyValue(object value) {
             if (value != null && value!=DBNull.Value) {
                 var settable = value.ChangeTypeTo<<#=tbl.PK.SysType#>>();
                 this.GetType().GetProperty(this.KeyName()).SetValue(this, settable, null);
             }
         }
-        
+		<# 
+	for (int j=1;j<tbl.PrimaryKeys.Count;j++)
+	{
+	#> //<#=  tbl.PrimaryKeys[j]#> <#= tbl.FindPKColumn(tbl.PrimaryKeys[j]).CleanName #> <#= tbl.FindPKColumn(tbl.PrimaryKeys[j]).SysType #>
+		
+        public string KeyName_<#=j#>()
+        {
+            return "<#=CleanUp(tbl.PrimaryKeys[j]) #>";
+        }
+
+        public object KeyValue_<#=j#>()
+        {
+            return this.<#=CleanUp(tbl.PrimaryKeys[j])#>;
+        }
+  
+	
+     <# 
+	} #>
+        public override bool Equals(object obj){
+            if(obj.GetType()==typeof(<#=tbl.ClassName#>)){
+                <#=tbl.ClassName#> compare=(<#=tbl.ClassName#>)obj;
+				return compare.KeyValue()==this.KeyValue()<# for (int j=1;j<tbl.PrimaryKeys.Count;j++)
+	{ #> && compare.KeyValue_<#=j#>()==this.KeyValue_<#=j#>()<#}#>;
+           }else{
+                return base.Equals(obj);
+            }
+        }
+
         public override string ToString(){
             <# if (tbl.ClassName == tbl.Descriptor.CleanName){ #>
 			    return this.<#=tbl.Descriptor.CleanName+"X" #>.ToString();
@@ -270,14 +296,6 @@ namespace <#=Namespace #>
             <# } #>
         }
 
-        public override bool Equals(object obj){
-            if(obj.GetType()==typeof(<#=tbl.ClassName#>)){
-                <#=tbl.ClassName#> compare=(<#=tbl.ClassName#>)obj;
-                return compare.KeyValue()==this.KeyValue();
-            }else{
-                return base.Equals(obj);
-            }
-        }
 
 <#      if(tbl.PK.SysType=="int"){#>
         
@@ -285,7 +303,11 @@ namespace <#=Namespace #>
             return this.<#=tbl.PK.CleanName #>;
         }
         
-<#      }#>
+<#      } else {#>
+        public override int GetHashCode(){
+		return base.GetHashCode();
+		}
+<# } #>
         public string DescriptorValue()
         {
             <# if (tbl.ClassName == tbl.Descriptor.CleanName){ #>
@@ -307,41 +329,64 @@ namespace <#=Namespace #>
             return "<#=tbl.Descriptor.CleanName #>";
         }
         
-        #region ' Foreign Keys '
-<#
-            List<string> fkCreated = new List<string>();
+		#region ' Foreign Keys '
+<# 
+		Dictionary<string,List<FKTable>> contraints = new Dictionary<string,List<FKTable>>();
             foreach(FKTable fk in tbl.FKTables)
-            { 
-                
-                if(!ExcludeTables.Contains(fk.OtherTable)){
-                    string propName=fk.OtherQueryable;
-                    if(fkCreated.Contains(propName))
-                    {
-                        propName=fk.OtherQueryable+fkCreated.Count.ToString();
-                    }
-                    
-                    fkCreated.Add(fk.OtherQueryable);
-                    
+			{
+                if(!ExcludeTables.Contains(fk.OtherTable))
+					{
+					if (contraints.ContainsKey(fk.ConstraintName)==false)
+					{
+						List<FKTable> table_list=new List<FKTable>();
+						table_list.Add(fk);
+						contraints.Add(fk.ConstraintName,table_list);
+					}
+					else
+					{
+						List<FKTable> table_list=contraints[fk.ConstraintName];
+						table_list.Add(fk);					
+					}	
+					}				
+			}
+				List<string> fkCreated = new List<string>();
+			foreach (string contraint in contraints.Keys)
+			{
+				List<FKTable> table_list=contraints[contraint];
+               string propName=table_list[0].OtherQueryable;
+               if(fkCreated.Contains(propName))
+               {
+                   propName=table_list[0].OtherQueryable+fkCreated.Count.ToString();
+               }
                
-#>
-        public IQueryable<<#=fk.OtherClass #>> <#=propName #>
-        {
-            get
-            {
-                
-                  var repo=<#=Namespace #>.<#=fk.OtherClass#>.GetRepo();
-                  return from items in repo.GetAll()
-                       where items.<#=CleanUp(fk.OtherColumn)#> == _<#=CleanUp(fk.ThisColumn)#>
-                       select items;
-            }
-        }
+               fkCreated.Add(table_list[0].OtherQueryable);
 
-<#
-                }
-            }
-            
+				#>
+		public IQueryable<<#=table_list[0].OtherClass #>> <#=propName #>
+		{
+			get
+			{
+				
+				var repo=<#=Namespace #>.<#=table_list[0].OtherClass#>.GetRepo();
+				return from items in repo.GetAll()
+					 where<# 
+				for (int i=0;i<table_list.Count;i++)
+				{
+					FKTable tab=table_list[i];					
+					if (i==0){#> items.<#=CleanUp(tab.OtherColumn)#> == <#=CleanUp(tab.ThisColumn) #>
+							<# } else {#> && items.<#=CleanUp(tab.OtherColumn)#> == <#=CleanUp(tab.ThisColumn) #>
+							<# }#>
+<#}#>
+select items;
+			}
+		}
+		
+<# 
+		}
+
+		
 #>
-        #endregion
+#endregion        
         
 
 <#
@@ -354,7 +399,7 @@ namespace <#=Namespace #>
 			}
 #>
         <#=col.SysType #><#=CheckNullable(col)#> _<#=col.CleanName #>;
-        public <#=col.SysType #><#=CheckNullable(col)#> <#=col.CleanName #>
+        public <#=col.SysType #><#=CheckNullable(col)#> <#=col.CleanName #>  
         {
             get { return _<#=col.CleanName #>; }
             set
@@ -616,3 +661,4 @@ namespace <#=Namespace #>
     }
 #>
 }
+

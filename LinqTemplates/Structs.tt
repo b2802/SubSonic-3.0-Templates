@@ -44,7 +44,7 @@ namespace <#=Namespace#> {
             }
             
 <#          foreach(var col in tbl.Columns){#>
-            public IColumn <#=col.CleanName#>{
+            public IColumn <#=col.CleanName#>_Column{
                 get{
                     return this.GetColumn("<#=col.Name#>");
                 }

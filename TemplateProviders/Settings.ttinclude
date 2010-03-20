@@ -23,7 +23,7 @@
     
     //This is the name of your database and is used in naming
     //the repository. By default we set it to the connection string name
-    const string DatabaseName = "Northwind";
+    const string DatabaseName = "NorthWind";
 
     const bool TreatTinyint1AsBool = false;
 
@@ -33,35 +33,18 @@
     "BuildVersion",
     };
 
-    string CleanUpColumnName(string tableName){
-	    string res = tableName.Replace(" ","_");
-        char[] ca = res.ToLower().ToCharArray();
-        for (int i = 0; i < ca.Length; i++) {
-            if ((i == 0) || (ca[i - 1] == '_')) {
-                ca[i] = char.ToUpper(ca[i]);
-            }         
-        }
-        res = new string(ca);
-        res = res.Replace("_","");
-        return res;
+    string CleanUp(string tableName){
+	    string result=tableName;
+    	
+	    //strip blanks
+	    result=result.Replace(" ","");
+    	
+	    //put your logic here...
+    	
+	    return result;
     }
-    
-    string CleanUpTableName(string tableName)
-    {
-        string res = tableName.Replace(" ","_");
-        char[] ca = res.ToLower().ToCharArray();
-        for (int i = 0; i < ca.Length; i++) {
-            if ((i == 0) || (ca[i - 1] == '_')) {
-                ca[i] = char.ToUpper(ca[i]);
-            }         
-        }
-        res = new string(ca);
-        res = res.Replace("_","");
-        res = res.Replace(" ","");
-        return res;
-    }
-    
-    string CheckNullable(Column col){
+
+	string CheckNullable(Column col){
         string result="";
         if(col.IsNullable && col.SysType !="byte[]" && col.SysType !="string")
             result="?";
@@ -172,6 +155,7 @@
         public string CleanName;
         public string ClassName;
         public string PrimaryKey;
+        public List<string> PrimaryKeys;
         public string Schema;
         public string QueryableName;
         
@@ -193,6 +177,26 @@
                 return this.Columns.FirstOrDefault(x=>x.IsPK) ?? this.Columns[0];
             }
         }
+        public Column FindPKColumn(string name){
+            
+                return this.Columns.Find(x=>x.Name==name);            
+        }
+        public string PKsArgList{
+            get{
+                StringBuilder sb=new StringBuilder();
+                int loopCount=1;
+                foreach(string par in PrimaryKeys){
+					Column col=FindPKColumn(par);
+					if (col!=null)
+                    	sb.AppendFormat("{0} {1}", col.SysType,col.CleanName);
+                    if(loopCount<PrimaryKeys.Count)
+                        sb.Append(",");
+                    loopCount++;
+                }
+                return sb.ToString();
+            }
+        }
+		
         public Column Descriptor{
             get{
                 if(this.Columns.Count==1){
@@ -211,7 +215,7 @@
 
     public class Column{
         public string Name;
-        public string CleanName;
+		public string CleanName;
         public string SysType;
         public string DataType;
         public DbType DbType;
@@ -228,6 +232,7 @@
         public string OtherColumn;
         public string OtherClass;
         public string OtherQueryable;
+		public string ConstraintName;
     }
     
     public class SP{

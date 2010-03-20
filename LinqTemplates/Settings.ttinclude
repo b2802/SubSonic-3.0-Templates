@@ -43,6 +43,7 @@
     	
 	    return result;
     }
+
     string CheckNullable(Column col){
         string result="";
         if(col.IsNullable && col.SysType !="byte[]" && col.SysType !="string")
@@ -154,6 +155,7 @@
         public string CleanName;
         public string ClassName;
         public string PrimaryKey;
+		public List<string> PrimaryKeys;
         public string Schema;
         public string QueryableName;
         
@@ -172,9 +174,29 @@
         }
         public Column PK{
             get{
-                return this.Columns.SingleOrDefault(x=>x.IsPK) ?? this.Columns[0];
+                return this.Columns.FirstOrDefault(x=>x.IsPK) ?? this.Columns[0];
             }
         }
+        public Column FindPKColumn(string name){
+            
+                return this.Columns.Find(x=>x.Name==name);            
+        }
+        public string PKsArgList{
+            get{
+                StringBuilder sb=new StringBuilder();
+                int loopCount=1;
+                foreach(string par in PrimaryKeys){
+					Column col=FindPKColumn(par);
+					if (col!=null)
+                    	sb.AppendFormat("{0} {1}", col.SysType,col.CleanName);
+                    if(loopCount<PrimaryKeys.Count)
+                        sb.Append(",");
+                    loopCount++;
+                }
+                return sb.ToString();
+            }
+        }
+		
         public Column Descriptor{
             get{
                 if(this.Columns.Count==1){
@@ -210,6 +232,7 @@
         public string OtherColumn;
         public string OtherClass;
         public string OtherQueryable;
+        public string ConstraintName;
     }
     
     public class SP{
